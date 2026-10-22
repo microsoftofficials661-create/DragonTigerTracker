@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "DragonTigerTracker"
+rootProject.name = "MyNewApp"
 include(":app")
