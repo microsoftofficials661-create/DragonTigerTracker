@@ -1,12 +1,16 @@
 package com.example.dragontracker
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -24,9 +28,15 @@ import java.util.Locale
 
 private val AppBlack = Color(0xFF101014)
 private val CardBlack = Color(0xFF1D1D24)
+private val DarkButton = Color(0xFF16161B)
 private val AccentRed = Color(0xFFE53935)
 private val AccentGold = Color(0xFFFFC857)
 private val SoftWhite = Color(0xFFF4F4F7)
+private val ProfitGreen = Color(0xFF4CAF50)
+private val CircleDotRed = Color(0xFFEF5350)
+private val CircleDotBlack = Color(0xFF424242)
+
+val BET_LEVELS = listOf(10, 30, 60, 120, 240, 480, 1000, 2000)
 
 data class GameEntry(
     val id: Long,
@@ -34,6 +44,10 @@ data class GameEntry(
     val second: String,
     val suggestion: String,
     val actual: String,
+    val betChoice: String,
+    val level: Int,
+    val stake: Int,
+    val profitLoss: Double,
     val timestamp: String
 )
 
@@ -61,40 +75,50 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun loadSavedEntries(): List<GameEntry> {
-        val raw = getSharedPreferences("tracker", MODE_PRIVATE)
-            .getString("entries", "[]") ?: "[]"
-        return try {
+        val prefs = getSharedPreferences("DragonTigerPrefs", Context.MODE_PRIVATE)
+        val raw = prefs.getString("entries", null) ?: return emptyList()
+        val list = mutableListOf<GameEntry>()
+        try {
             val array = JSONArray(raw)
-            (0 until array.length()).map { i ->
-                val o = array.getJSONObject(i)
-                GameEntry(
-                    id = o.optLong("id"),
-                    first = o.optString("first"),
-                    second = o.optString("second"),
-                    suggestion = o.optString("suggestion"),
-                    actual = o.optString("actual"),
-                    timestamp = o.optString("timestamp")
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(
+                    GameEntry(
+                        id = obj.optLong("id", System.currentTimeMillis()),
+                        first = obj.optString("first", "Red"),
+                        second = obj.optString("second", "Red"),
+                        suggestion = obj.optString("suggestion", "Dragon"),
+                        actual = obj.optString("actual", "Not entered"),
+                        betChoice = obj.optString("betChoice", "Dragon"),
+                        level = obj.optInt("level", 1),
+                        stake = obj.optInt("stake", 10),
+                        profitLoss = obj.optDouble("profitLoss", 0.0),
+                        timestamp = obj.optString("timestamp", "")
+                    )
                 )
-            }.reversed()
-        } catch (_: Exception) {
-            emptyList()
-        }
+            }
+        } catch (_: Exception) {}
+        return list
     }
 
     private fun saveSavedEntries(entries: List<GameEntry>) {
+        val prefs = getSharedPreferences("DragonTigerPrefs", Context.MODE_PRIVATE)
         val array = JSONArray()
-        entries.reversed().forEach { e ->
-            array.put(JSONObject().apply {
-                put("id", e.id)
-                put("first", e.first)
-                put("second", e.second)
-                put("suggestion", e.suggestion)
-                put("actual", e.actual)
-                put("timestamp", e.timestamp)
-            })
+        entries.forEach { entry ->
+            val obj = JSONObject()
+            obj.put("id", entry.id)
+            obj.put("first", entry.first)
+            obj.put("second", entry.second)
+            obj.put("suggestion", entry.suggestion)
+            obj.put("actual", entry.actual)
+            obj.put("betChoice", entry.betChoice)
+            obj.put("level", entry.level)
+            obj.put("stake", entry.stake)
+            obj.put("profitLoss", entry.profitLoss)
+            obj.put("timestamp", entry.timestamp)
+            array.put(obj)
         }
-        getSharedPreferences("tracker", MODE_PRIVATE)
-            .edit().putString("entries", array.toString()).apply()
+        prefs.edit().putString("entries", array.toString()).apply()
     }
 }
 
@@ -105,18 +129,20 @@ private fun TrackerApp(
 ) {
     var first by remember { mutableStateOf("Red") }
     var second by remember { mutableStateOf("Red") }
-    var actual by remember { mutableStateOf("Not entered") }
+    var actual by remember { mutableStateOf("Dragon") }
+    var betChoice by remember { mutableStateOf("Dragon") }
+    var currentLevel by remember { mutableIntStateOf(1) }
     var entries by remember { mutableStateOf(loadEntries()) }
     var tab by remember { mutableStateOf("Tracker") }
     var showClearDialog by remember { mutableStateOf(false) }
 
-    val suggestion = when {
-        first == "Black" && second == "Black" -> "Tiger"
-        else -> "Dragon"
-    }
+    val suggestion = if (first == "Black" && second == "Black") "Tiger" else "Dragon"
+    val currentStake = BET_LEVELS.getOrElse(currentLevel - 1) { BET_LEVELS.last() }
+
+    val totalPnL = entries.sumOf { it.profitLoss }
     val dragonCount = entries.count { it.actual == "Dragon" }
     val tigerCount = entries.count { it.actual == "Tiger" }
-    val savedCount = entries.size
+    val tieCount = entries.count { it.actual == "Tie" }
 
     Scaffold(
         containerColor = AppBlack,
@@ -129,7 +155,7 @@ private fun TrackerApp(
                         icon = {
                             Text(
                                 when (item) {
-                                    "Tracker" -> "🎴"
+                                    "Tracker" -> "🎯"
                                     "History" -> "📜"
                                     else -> "📊"
                                 },
@@ -140,7 +166,7 @@ private fun TrackerApp(
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = AccentGold,
                             selectedTextColor = AccentGold,
-                            indicatorColor = AccentRed.copy(alpha = 0.25f),
+                            indicatorColor = AccentRed.copy(alpha = 0.35f),
                             unselectedTextColor = SoftWhite.copy(alpha = 0.7f)
                         )
                     )
@@ -155,100 +181,251 @@ private fun TrackerApp(
                 .padding(padding)
                 .padding(16.dp)
         ) {
-            Text("DRAGON TIGER", color = AccentRed, fontSize = 27.sp, fontWeight = FontWeight.Black)
-            Text("Colour Card Tracker", color = SoftWhite.copy(alpha = 0.7f), fontSize = 14.sp)
-            Spacer(Modifier.height(16.dp))
+            // Personalized User Greeting Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text("WELCOME BACK,", color = AccentGold, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                    Text("MOHAN", color = SoftWhite, fontSize = 20.sp, fontWeight = FontWeight.Black)
+                }
+                Surface(
+                    shape = RoundedCornerShape(20.dp),
+                    color = CardBlack,
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AccentGold.copy(alpha = 0.5f))
+                ) {
+                    Text(
+                        "PRO EDITION",
+                        color = AccentGold,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Text("DRAGON TIGER", color = AccentRed, fontSize = 24.sp, fontWeight = FontWeight.Black)
+            Text("Colour Card Tracker", color = SoftWhite.copy(alpha = 0.7f), fontSize = 13.sp)
+
+            Spacer(Modifier.height(10.dp))
 
             when (tab) {
                 "Tracker" -> {
-                    Text("Select colours", color = SoftWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(12.dp))
-                    ColourPicker("FIRST COLOUR", first) { first = it }
-                    Spacer(Modifier.height(10.dp))
-                    ColourPicker("SECOND COLOUR", second) { second = it }
-                    Spacer(Modifier.height(16.dp))
-
-                    Surface(
-                        color = CardBlack,
-                        shape = RoundedCornerShape(18.dp),
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = CardBlack),
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(Modifier.padding(16.dp)) {
-                            Text("RULE-BASED SUGGESTION", color = AccentGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                            Text(suggestion.uppercase(), color = if (suggestion == "Dragon") AccentRed else AccentGold,
-                                fontSize = 30.sp, fontWeight = FontWeight.Black)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("Level: $currentLevel of 8", color = SoftWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("Next Bet: ₹$currentStake", color = AccentGold, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Total P&L", color = SoftWhite.copy(alpha = 0.6f), fontSize = 12.sp)
+                                val pnlColor = if (totalPnL >= 0) ProfitGreen else AccentRed
+                                Text(
+                                    "${if (totalPnL >= 0) "+" else ""}${String.format(Locale.US, "%.2f", totalPnL)}",
+                                    color = pnlColor,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+
+                    Text("Select colours", color = SoftWhite, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+
+                    Text("FIRST COLOUR", color = SoftWhite.copy(alpha = 0.6f), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ColourPillButton(
+                            title = "RED",
+                            dotColor = CircleDotRed,
+                            isSelected = first == "Red",
+                            modifier = Modifier.weight(1f)
+                        ) { first = "Red" }
+                        ColourPillButton(
+                            title = "BLACK",
+                            dotColor = CircleDotBlack,
+                            isSelected = first == "Black",
+                            modifier = Modifier.weight(1f)
+                        ) { first = "Black" }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    Text("SECOND COLOUR", color = SoftWhite.copy(alpha = 0.6f), fontSize = 11.sp)
+                    Spacer(Modifier.height(4.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ColourPillButton(
+                            title = "RED",
+                            dotColor = CircleDotRed,
+                            isSelected = second == "Red",
+                            modifier = Modifier.weight(1f)
+                        ) { second = "Red" }
+                        ColourPillButton(
+                            title = "BLACK",
+                            dotColor = CircleDotBlack,
+                            isSelected = second == "Black",
+                            modifier = Modifier.weight(1f)
+                        ) { second = "Black" }
+                    }
+
+                    Spacer(Modifier.height(14.dp))
+
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = CardBlack),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text("RULE-BASED SUGGESTION", color = AccentGold, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Spacer(Modifier.height(4.dp))
+                            Text(suggestion.uppercase(Locale.ROOT), color = AccentRed, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                            Spacer(Modifier.height(2.dp))
                             Text(
                                 "This is only your saved colour rule, not a reliable prediction of the actual game result.",
-                                color = SoftWhite.copy(alpha = 0.65f), fontSize = 12.sp
+                                color = SoftWhite.copy(alpha = 0.65f),
+                                fontSize = 11.sp,
+                                lineHeight = 15.sp
                             )
                         }
                     }
-                    Spacer(Modifier.height(16.dp))
-                    Text("ACTUAL RESULT (optional)", color = SoftWhite, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                        ChoiceButton("Dragon", actual == "Dragon", Modifier.weight(1f)) { actual = "Dragon" }
-                        ChoiceButton("Tiger", actual == "Tiger", Modifier.weight(1f)) { actual = "Tiger" }
+
+                    Spacer(Modifier.height(14.dp))
+
+                    Text("ACTUAL RESULT (optional)", color = SoftWhite, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ResultPillButton(title = "Dragon", isSelected = actual == "Dragon", modifier = Modifier.weight(1f)) {
+                            actual = "Dragon"
+                            betChoice = suggestion
+                        }
+                        ResultPillButton(title = "Tiger", isSelected = actual == "Tiger", modifier = Modifier.weight(1f)) {
+                            actual = "Tiger"
+                            betChoice = suggestion
+                        }
                     }
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = { actual = "Not entered" },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Clear actual result") }
-                    Spacer(Modifier.height(12.dp))
+
+                    Spacer(Modifier.height(14.dp))
+
                     Button(
                         onClick = {
-                            val stamp = SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault()).format(Date())
+                            val stamp = SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault()).format(Date())
+                            val pnl = when {
+                                actual == "Tie" -> -(currentStake * 0.50)
+                                betChoice == actual -> currentStake * 0.95
+                                else -> -(currentStake.toDouble())
+                            }
+
                             val entry = GameEntry(
                                 id = System.currentTimeMillis(),
                                 first = first,
                                 second = second,
                                 suggestion = suggestion,
                                 actual = actual,
+                                betChoice = betChoice,
+                                level = currentLevel,
+                                stake = currentStake,
+                                profitLoss = pnl,
                                 timestamp = stamp
                             )
+
                             entries = listOf(entry) + entries
                             saveEntries(entries)
-                            actual = "Not entered"
+
+                            if (betChoice == actual) {
+                                currentLevel = 1
+                            } else if (actual != "Tie") {
+                                currentLevel = if (currentLevel < 8) currentLevel + 1 else 1
+                            }
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
-                    ) { Text("SAVE ENTRY", fontWeight = FontWeight.Bold) }
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(48.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentRed),
+                        shape = RoundedCornerShape(24.dp)
+                    ) {
+                        Text("SAVE ENTRY", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                    }
                 }
 
                 "History" -> {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                        Text("Game history", color = SoftWhite, fontSize = 21.sp, fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f))
-                        TextButton(onClick = { showClearDialog = true }) { Text("Clear all", color = AccentRed) }
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Game history", color = SoftWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                        TextButton(onClick = { showClearDialog = true }) {
+                            Text("Clear all", color = AccentRed)
+                        }
                     }
+
                     if (entries.isEmpty()) {
-                        EmptyMessage("No entries saved yet. Add a colour entry from the Tracker tab.")
+                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                            Text("No entries saved yet. Add a colour entry from the Tracker tab.", color = SoftWhite.copy(alpha = 0.6f))
+                        }
                     } else {
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             items(entries, key = { it.id }) { entry ->
-                                HistoryCard(entry = entry, onDelete = {
-                                    entries = entries.filterNot { it.id == entry.id }
-                                    saveEntries(entries)
-                                })
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = CardBlack),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .padding(12.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column {
+                                            Text("Lvl ${entry.level} | ₹${entry.stake} on ${entry.betChoice}", color = SoftWhite, fontWeight = FontWeight.Bold)
+                                            Text("Cards: ${entry.first}+${entry.second} → ${entry.actual}", color = SoftWhite.copy(alpha = 0.65f), fontSize = 12.sp)
+                                        }
+                                        val win = entry.profitLoss > 0
+                                        Text(
+                                            "${if (win) "+" else ""}${String.format(Locale.US, "%.2f", entry.profitLoss)}",
+                                            color = if (win) ProfitGreen else AccentRed,
+                                            fontWeight = FontWeight.Black,
+                                            fontSize = 15.sp
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
 
                 else -> {
-                    Text("Recorded statistics", color = SoftWhite, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                    Text("Recorded statistics", color = SoftWhite, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(12.dp))
-                    StatCard("Total entries", savedCount.toString())
-                    Spacer(Modifier.height(8.dp))
-                    StatCard("Actual Dragon results", dragonCount.toString())
-                    Spacer(Modifier.height(8.dp))
-                    StatCard("Actual Tiger results", tigerCount.toString())
-                    Spacer(Modifier.height(12.dp))
-                    Text(
-                        "Statistics summarize only the actual results you entered. They do not predict future results.",
-                        color = SoftWhite.copy(alpha = 0.65f), fontSize = 13.sp
-                    )
+                    StatCard("Player", "Mohan")
+                    Spacer(Modifier.height(6.dp))
+                    StatCard("Total entries", "${entries.size}")
+                    Spacer(Modifier.height(6.dp))
+                    StatCard("Total P&L", "${if (totalPnL >= 0) "+" else ""}${String.format(Locale.US, "%.2f", totalPnL)}")
+                    Spacer(Modifier.height(6.dp))
+                    StatCard("Actual Dragon results", "$dragonCount")
+                    Spacer(Modifier.height(6.dp))
+                    StatCard("Actual Tiger results", "$tigerCount")
+                    Spacer(Modifier.height(6.dp))
+                    StatCard("Tie results", "$tieCount")
                 }
             }
         }
@@ -258,88 +435,109 @@ private fun TrackerApp(
         AlertDialog(
             onDismissRequest = { showClearDialog = false },
             title = { Text("Clear all history?") },
-            text = { Text("This permanently removes saved entries from this app.") },
+            text = { Text("This will reset all your tracked entries.") },
             confirmButton = {
                 TextButton(onClick = {
                     entries = emptyList()
                     saveEntries(entries)
+                    currentLevel = 1
                     showClearDialog = false
-                }) { Text("Clear", color = AccentRed) }
+                }) {
+                    Text("Clear", color = AccentRed)
+                }
             },
             dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) { Text("Cancel") }
-            },
-            containerColor = CardBlack,
-            titleContentColor = SoftWhite,
-            textContentColor = SoftWhite
+                TextButton(onClick = { showClearDialog = false }) {
+                    Text("Cancel", color = SoftWhite)
+                }
+            }
         )
     }
 }
 
 @Composable
-private fun ColourPicker(title: String, selected: String, onSelect: (String) -> Unit) {
-    Column {
-        Text(title, color = SoftWhite.copy(alpha = 0.7f), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-            ChoiceButton("🔴  RED", selected == "Red", Modifier.weight(1f)) { onSelect("Red") }
-            ChoiceButton("⚫  BLACK", selected == "Black", Modifier.weight(1f)) { onSelect("Black") }
+private fun ColourPillButton(
+    title: String,
+    dotColor: Color,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = DarkButton,
+        modifier = modifier
+            .height(46.dp)
+            .border(
+                width = if (isSelected) 1.5.dp else 1.dp,
+                color = if (isSelected) AccentRed else Color.White.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .clickable { onClick() }
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(14.dp)
+                    .background(dotColor, shape = CircleShape)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(title, color = SoftWhite, fontWeight = FontWeight.Bold, fontSize = 13.sp)
         }
     }
 }
 
 @Composable
-private fun ChoiceButton(label: String, selected: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    OutlinedButton(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = 48.dp),
-        colors = ButtonDefaults.outlinedButtonColors(
-            containerColor = if (selected) AccentRed.copy(alpha = 0.22f) else CardBlack,
-            contentColor = SoftWhite
-        ),
-        border = androidx.compose.foundation.BorderStroke(
-            width = if (selected) 2.dp else 1.dp,
-            color = if (selected) AccentRed else SoftWhite.copy(alpha = 0.2f)
-        ),
-        shape = RoundedCornerShape(12.dp)
+private fun ResultPillButton(
+    title: String,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(10.dp),
+        color = DarkButton,
+        modifier = modifier
+            .height(44.dp)
+            .border(
+                width = if (isSelected) 1.5.dp else 1.dp,
+                color = if (isSelected) AccentRed else Color.White.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(10.dp)
+            )
+            .clickable { onClick() }
     ) {
-        Text(label, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
-    }
-}
-
-@Composable
-private fun HistoryCard(entry: GameEntry, onDelete: () -> Unit) {
-    Surface(color = CardBlack, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-        Column(Modifier.padding(14.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("#${entry.id.toString().takeLast(5)}", color = AccentGold, fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f))
-                Text(entry.timestamp, color = SoftWhite.copy(alpha = 0.6f), fontSize = 11.sp)
-            }
-            Spacer(Modifier.height(6.dp))
-            Text("${entry.first} + ${entry.second}", color = SoftWhite, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-            Text("Rule suggestion: ${entry.suggestion}", color = AccentGold, fontSize = 13.sp)
-            Text("Actual result: ${entry.actual}", color = SoftWhite.copy(alpha = 0.8f), fontSize = 13.sp)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onDelete) { Text("Delete entry", color = AccentRed) }
-            }
+        Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
+            Text(
+                title,
+                color = if (isSelected) SoftWhite else SoftWhite.copy(alpha = 0.7f),
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                fontSize = 13.sp
+            )
         }
     }
 }
 
 @Composable
 private fun StatCard(title: String, value: String) {
-    Surface(color = CardBlack, shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text(title, color = SoftWhite.copy(alpha = 0.8f), modifier = Modifier.weight(1f))
-            Text(value, color = AccentGold, fontSize = 24.sp, fontWeight = FontWeight.Black)
+    Card(
+        colors = CardDefaults.cardColors(containerColor = CardBlack),
+        shape = RoundedCornerShape(8.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(title, color = SoftWhite)
+            Text(value, color = AccentGold, fontWeight = FontWeight.Bold, fontSize = 15.sp)
         }
     }
 }
 
-@Composable
-private fun EmptyMessage(message: String) {
-    Box(Modifier.fillMaxWidth().padding(top = 30.dp), contentAlignment = Alignment.Center) {
-        Text(message, color = SoftWhite.copy(alpha = 0.65f))
-    }
-}
