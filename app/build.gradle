@@ -1,0 +1,14 @@
+apply plugin: 'com.android.application'
+
+android {
+    namespace 'com.tracker.dragontiger'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.tracker.dragontiger"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0"
+    }
+}

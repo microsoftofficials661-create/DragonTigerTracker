@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Dragon Tiger Tracker</title>
+  <style>
+    :root {
+      --bg: #0a0f1d;
+      --card: #131b2e;
+      --border: #1f2b48;
+      --blue: #007fff;
+      --cyan: #00e5ff;
+      --text: #ffffff;
+      --green: #00e676;
+      --red: #ff5252;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: sans-serif; }
+    body { background: var(--bg); color: var(--text); padding: 16px; display: flex; justify-content: center; }
+    .container { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 14px; }
+    .header { display: flex; justify-content: space-between; align-items: center; }
+    .title-sub { color: var(--cyan); font-size: 11px; font-weight: 700; }
+    .title-main { font-size: 20px; font-weight: 800; }
+    .badge { border: 1px solid var(--cyan); color: var(--cyan); padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 14px; }
+    .status-row { display: flex; justify-content: space-between; align-items: center; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+    .btn { background: var(--card); border: 1px solid var(--border); color: #fff; padding: 12px; border-radius: 8px; font-weight: bold; cursor: pointer; text-align: center; }
+    .btn.active-blue { border-color: var(--cyan); background: rgba(0, 127, 255, 0.25); }
+    .btn-main { background: var(--blue); color: #fff; border: none; padding: 14px; border-radius: 24px; font-size: 15px; font-weight: 800; cursor: pointer; width: 100%; }
+    .res-text { font-size: 20px; font-weight: 800; color: var(--cyan); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <div class="title-sub">WELCOME BACK,</div>
+        <div class="title-main">MOHAN</div>
+      </div>
+      <div class="badge">PRO ACTIVE</div>
+    </div>
+    <div class="card status-row">
+      <div>
+        <div style="font-size: 11px; color: #8892b0;">CURRENT LEVEL</div>
+        <div style="font-size: 18px; font-weight: 700; color: var(--cyan);" id="level-txt">Level: 1 of 8</div>
+      </div>
+      <div style="text-align: right;">
+        <div style="font-size: 11px; color: #8892b0;">TOTAL P&L</div>
+        <div style="font-size: 18px; font-weight: 700; color: var(--green);" id="pnl-txt">₹0.00</div>
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-size: 11px; color: #8892b0; margin-bottom: 6px;">SELECT FIRST CARD</div>
+      <div class="grid-2">
+        <button class="btn" id="c1-r" onclick="setCard(1, 'RED')">RED</button>
+        <button class="btn" id="c1-b" onclick="setCard(1, 'BLACK')">BLACK</button>
+      </div>
+      <div style="font-size: 11px; color: #8892b0; margin: 10px 0 6px;">SELECT SECOND CARD</div>
+      <div class="grid-2">
+        <button class="btn" id="c2-r" onclick="setCard(2, 'RED')">RED</button>
+        <button class="btn" id="c2-b" onclick="setCard(2, 'BLACK')">BLACK</button>
+      </div>
+    </div>
+    <div class="card status-row">
+      <div>
+        <div style="font-size: 11px; color: var(--cyan); font-weight: bold;">SUGGESTION</div>
+        <div style="font-size: 11px; color: #8892b0;">Pattern 1 Rule</div>
+      </div>
+      <div class="res-text" id="sug-txt">WAITING...</div>
+    </div>
+    <div class="card">
+      <div style="font-size: 11px; color: #8892b0; margin-bottom: 6px;">ACTUAL OUTCOME</div>
+      <div class="grid-2">
+        <button class="btn" id="res-d" onclick="setRes('Dragon')">DRAGON</button>
+        <button class="btn" id="res-t" onclick="setRes('Tiger')">TIGER</button>
+      </div>
+    </div>
+    <button class="btn-main" onclick="save()">SAVE ENTRY</button>
+  </div>
+  <script>
+    let c1 = null, c2 = null, res = null, pnl = 0, lvl = 1;
+    const ladder = [10, 30, 60, 110, 220, 450, 900, 1800];
+    function setCard(n, col) {
+      if(n === 1) { c1 = col; document.getElementById('c1-r').className = 'btn' + (col==='RED'?' active-blue':''); document.getElementById('c1-b').className = 'btn' + (col==='BLACK'?' active-blue':''); }
+      else { c2 = col; document.getElementById('c2-r').className = 'btn' + (col==='RED'?' active-blue':''); document.getElementById('c2-b').className = 'btn' + (col==='BLACK'?' active-blue':''); }
+      calc();
+    }
+    function calc() {
+      if(c1 && c2) {
+        document.getElementById('sug-txt').innerText = (c1 === 'BLACK' && c2 === 'BLACK') ? 'TIGER' : 'DRAGON';
+      }
+    }
+    function setRes(r) {
+      res = r;
+      document.getElementById('res-d').className = 'btn' + (r==='Dragon'?' active-blue':'');
+      document.getElementById('res-t').className = 'btn' + (r==='Tiger'?' active-blue':'');
+    }
+    function save() {
+      const sug = document.getElementById('sug-txt').innerText;
+      if(!c1 || !c2 || !res || sug === 'WAITING...') return;
+      const bet = ladder[lvl-1];
+      if(sug.toLowerCase() === res.toLowerCase()) { pnl += (bet * 0.95); lvl = 1; }
+      else { pnl -= bet; lvl = Math.min(lvl + 1, 8); }
+      document.getElementById('pnl-txt').innerText = (pnl >= 0 ? '+' : '') + '₹' + pnl.toFixed(2);
+      document.getElementById('level-txt').innerText = 'Level: ' + lvl + ' of 8';
+      c1 = null; c2 = null; res = null;
+      document.querySelectorAll('.btn').forEach(b => b.classList.remove('active-blue'));
+      document.getElementById('sug-txt').innerText = 'WAITING...';
+    }
+  </script>
+</body>
+</html>
