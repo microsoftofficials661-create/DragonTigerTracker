@@ -12,20 +12,32 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Build Android APK
-        uses: kevin-david/android-build-action@v1.4.1
-        with:
-          project-path: '.'
-          gradle-task: 'assembleDebug'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Build Android APK with Cordova
+        run: |
+          npm install -g cordova
+          cordova create buildApp com.tracker.dragontiger "Dragon Tiger"
+          cd buildApp
+          rm -rf www/*
+          cp ../index.html www/index.html
+          cordova platform add android
+          cordova build android --debug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: DragonTiger-APK
-          path: "**/*.apk"
+          path: buildApp/platforms/android/app/build/outputs/apk/debug/*.apk
