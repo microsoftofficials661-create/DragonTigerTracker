@@ -12,20 +12,20 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Initialize Gradle Wrapper & Build APK
-        run: |
-          gradle wrapper --gradle-version 8.2
-          chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Build Android APK
+        uses: kevin-david/android-build-action@v1.4.1
+        with:
+          project-path: '.'
+          gradle-task: 'assembleDebug'
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: DragonTiger-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: "**/*.apk"
